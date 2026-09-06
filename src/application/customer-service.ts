@@ -1,5 +1,5 @@
 import type { CreateCustomerInput, Customer, CustomerId, UpdateCustomerInput } from "../domain/customer.js";
-import type { CustomerRepository } from "../domain/customer-repository.js";
+import { RepositoryConflictError, type CustomerRepository } from "../domain/customer-repository.js";
 
 export class ConflictError extends Error {}
 export class NotFoundError extends Error {}
@@ -20,7 +20,13 @@ export class CustomerService {
   async create(input: CreateCustomerInput): Promise<Customer> {
     const existing = await this.repository.findByEmail(input.email);
     if (existing) throw new ConflictError("A customer with this email already exists");
-    return this.repository.create(input);
+
+    try {
+      return await this.repository.create(input);
+    } catch (error) {
+      if (error instanceof RepositoryConflictError) throw new ConflictError(error.message);
+      throw error;
+    }
   }
 
   async update(id: CustomerId, input: UpdateCustomerInput): Promise<Customer> {
@@ -31,9 +37,14 @@ export class CustomerService {
       }
     }
 
-    const customer = await this.repository.update(id, input);
-    if (!customer) throw new NotFoundError("Customer not found");
-    return customer;
+    try {
+      const customer = await this.repository.update(id, input);
+      if (!customer) throw new NotFoundError("Customer not found");
+      return customer;
+    } catch (error) {
+      if (error instanceof RepositoryConflictError) throw new ConflictError(error.message);
+      throw error;
+    }
   }
 
   async delete(id: CustomerId): Promise<void> {
