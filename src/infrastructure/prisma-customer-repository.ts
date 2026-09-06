@@ -1,6 +1,6 @@
-import type { Customer as PrismaCustomer } from "@prisma/client";
+import { Prisma, type Customer as PrismaCustomer } from "@prisma/client";
 import type { CreateCustomerInput, Customer, CustomerId, UpdateCustomerInput } from "../domain/customer.js";
-import type { CustomerRepository } from "../domain/customer-repository.js";
+import { RepositoryConflictError, type CustomerRepository } from "../domain/customer-repository.js";
 import { prisma } from "./prisma.js";
 
 function toDomain(customer: PrismaCustomer): Customer {
@@ -13,11 +13,16 @@ function toDomain(customer: PrismaCustomer): Customer {
   };
 }
 
+function translateWriteError(error: unknown): never {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+    throw new RepositoryConflictError("A customer with this email already exists");
+  }
+  throw error;
+}
+
 export class PrismaCustomerRepository implements CustomerRepository {
   async list(): Promise<Customer[]> {
-    const customers = await prisma.customer.findMany({
-      orderBy: { createdAt: "desc" }
-    });
+    const customers = await prisma.customer.findMany({ orderBy: { createdAt: "desc" } });
     return customers.map(toDomain);
   }
 
@@ -34,29 +39,32 @@ export class PrismaCustomerRepository implements CustomerRepository {
   }
 
   async create(input: CreateCustomerInput): Promise<Customer> {
-    const customer = await prisma.customer.create({
-      data: {
-        name: input.name.trim(),
-        email: input.email.trim().toLowerCase()
-      }
-    });
-    return toDomain(customer);
+    try {
+      const customer = await prisma.customer.create({
+        data: { name: input.name.trim(), email: input.email.trim().toLowerCase() }
+      });
+      return toDomain(customer);
+    } catch (error) {
+      return translateWriteError(error);
+    }
   }
 
   async update(id: CustomerId, input: UpdateCustomerInput): Promise<Customer | null> {
     const existing = await prisma.customer.findUnique({ where: { id } });
-    if (!existing) {
-      return null;
-    }
+    if (!existing) return null;
 
-    const customer = await prisma.customer.update({
-      where: { id },
-      data: {
-        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
-        ...(input.email !== undefined ? { email: input.email.trim().toLowerCase() } : {})
-      }
-    });
-    return toDomain(customer);
+    try {
+      const customer = await prisma.customer.update({
+        where: { id },
+        data: {
+          ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+          ...(input.email !== undefined ? { email: input.email.trim().toLowerCase() } : {})
+        }
+      });
+      return toDomain(customer);
+    } catch (error) {
+      return translateWriteError(error);
+    }
   }
 
   async delete(id: CustomerId): Promise<boolean> {
