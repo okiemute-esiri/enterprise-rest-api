@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { CustomerService, ConflictError, NotFoundError } from "./application/customer-service.js";
+import type { CustomerRepository } from "./domain/customer-repository.js";
 import { InMemoryCustomerRepository } from "./infrastructure/in-memory-customer-repository.js";
 
 const createCustomerSchema = z.object({
@@ -13,9 +14,9 @@ const updateCustomerSchema = createCustomerSchema.partial().refine(
   { message: "At least one field must be supplied" }
 );
 
-export function createApp() {
+export function createApp(repository: CustomerRepository = new InMemoryCustomerRepository()) {
   const app = express();
-  const service = new CustomerService(new InMemoryCustomerRepository());
+  const service = new CustomerService(repository);
 
   app.disable("x-powered-by");
   app.use(express.json({ limit: "1mb" }));
