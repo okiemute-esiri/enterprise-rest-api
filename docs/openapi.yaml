@@ -1,0 +1,126 @@
+openapi: 3.0.3
+info:
+  title: Enterprise REST API
+  version: 1.0.0
+  description: Portfolio REST API demonstrating production-oriented backend engineering patterns.
+servers:
+  - url: http://localhost:3000
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+  /ready:
+    get:
+      summary: Readiness check
+      responses:
+        '200':
+          description: Service is ready
+  /api/v1/customers:
+    get:
+      summary: List customers
+      responses:
+        '200':
+          description: Customer collection
+    post:
+      summary: Create a customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomer'
+      responses:
+        '201':
+          description: Customer created
+        '409':
+          description: Email already exists
+        '422':
+          description: Validation failed
+  /api/v1/customers/{customerId}:
+    parameters:
+      - in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a customer
+      responses:
+        '200':
+          description: Customer found
+        '404':
+          description: Customer not found
+    patch:
+      summary: Update a customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomer'
+      responses:
+        '200':
+          description: Customer updated
+        '404':
+          description: Customer not found
+        '409':
+          description: Email already exists
+        '422':
+          description: Validation failed
+    delete:
+      summary: Delete a customer
+      responses:
+        '204':
+          description: Customer deleted
+        '404':
+          description: Customer not found
+components:
+  schemas:
+    Customer:
+      type: object
+      required: [id, name, email, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CreateCustomer:
+      type: object
+      required: [name, email]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          maxLength: 254
+    UpdateCustomer:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          maxLength: 254
