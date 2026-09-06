@@ -1,304 +1,272 @@
 # Enterprise REST API
 
-A production-oriented backend engineering project focused on the design of maintainable, scalable, well-documented RESTful services. The repository is intended to demonstrate API architecture beyond basic CRUD: resource modelling, validation, pagination, filtering, versioning, persistence boundaries, observability, testing and deployment concerns.
+A production-oriented TypeScript backend project demonstrating layered REST API design, validation, domain boundaries, automated tests, containerization, CI/CD, operational endpoints and API documentation.
 
-> **Portfolio status:** Architecture and implementation roadmap. Features described as planned are not represented as production-complete until corresponding source code and tests are committed.
+## Current Status
 
-## Engineering Objectives
+The repository now contains a working first implementation of the customer domain. It is intentionally built with an in-memory repository behind a domain interface so the API can run and be tested without external infrastructure while PostgreSQL/Prisma remains the next persistence milestone.
 
-- Design predictable resource-oriented HTTP APIs.
-- Separate transport, application, domain and persistence concerns.
-- Apply consistent validation and error semantics.
-- Support pagination, filtering, sorting and API evolution.
-- Provide automated unit, integration and end-to-end tests.
-- Package the service for reproducible containerized deployment.
-- Establish CI checks for formatting, linting, tests and builds.
+### Implemented
 
-## Proposed Technology Stack
+- TypeScript + Express service bootstrap
+- Strict TypeScript configuration
+- Versioned `/api/v1` customer endpoints
+- Customer domain model and repository contract
+- In-memory repository implementation
+- Application service layer
+- Zod request validation
+- Centralized structured error responses
+- Duplicate-email conflict handling
+- Health and readiness endpoints
+- End-to-end API tests with Vitest + Supertest
+- OpenAPI 3 specification
+- Multi-stage Docker image
+- GitHub Actions CI pipeline
+- Graceful HTTP server shutdown
+- Architecture documentation
+
+### Planned
+
+- PostgreSQL persistence
+- Prisma schema and migrations
+- Cursor pagination and advanced filtering
+- Structured JSON logging and correlation IDs
+- Metrics and tracing
+- Docker Compose development stack with PostgreSQL
+- Database integration tests
+
+## Technology Stack
 
 | Layer | Technology |
 | --- | --- |
-| Runtime | Node.js |
+| Runtime | Node.js 22+ |
 | Language | TypeScript |
-| API | Express |
-| Database | PostgreSQL |
-| ORM | Prisma |
+| HTTP | Express |
 | Validation | Zod |
-| Testing | Vitest / Supertest |
-| API Specification | OpenAPI 3 |
-| Containers | Docker / Docker Compose |
+| Testing | Vitest + Supertest |
+| API Contract | OpenAPI 3 |
+| Containers | Docker |
 | CI/CD | GitHub Actions |
+| Planned Persistence | PostgreSQL + Prisma |
 
-## Target Architecture
+## Architecture
 
 ```text
 Client
   |
   v
-HTTP / REST Layer
+Express HTTP API
   |
-  +-- Routes
-  +-- Request Validation
-  +-- Controllers
-  |
-  v
-Application Layer
-  |
-  +-- Use Cases
-  +-- Services
-  +-- DTO Mapping
+  +-- request validation
+  +-- routing
+  +-- response/error mapping
   |
   v
-Domain Layer
-  |
-  +-- Entities
-  +-- Business Rules
-  +-- Repository Contracts
+CustomerService
   |
   v
-Infrastructure Layer
+CustomerRepository interface
   |
-  +-- PostgreSQL
-  +-- Prisma Repositories
-  +-- Logging
-  +-- External Adapters
+  +-- InMemoryCustomerRepository   [implemented]
+  +-- PrismaCustomerRepository     [planned]
 ```
 
-The architecture keeps HTTP-specific concerns outside the domain and makes persistence replaceable behind repository interfaces.
+The application layer depends on the repository abstraction rather than a database implementation. This keeps domain behaviour testable and makes persistence replaceable.
 
-## Planned API Capabilities
-
-### Resource Modelling
-
-Resources will use consistent nouns, HTTP methods and status codes. Nested resources will be used only where the relationship is meaningful rather than reproducing database structure in URLs.
-
-Example endpoints:
+## API Endpoints
 
 ```text
+GET    /health
+GET    /ready
+
 GET    /api/v1/customers
 POST   /api/v1/customers
 GET    /api/v1/customers/:customerId
 PATCH  /api/v1/customers/:customerId
 DELETE /api/v1/customers/:customerId
-
-GET    /api/v1/orders
-POST   /api/v1/orders
-GET    /api/v1/orders/:orderId
 ```
 
-### Pagination
+### Create Customer
 
-The project will demonstrate both conventional page-based pagination and cursor/keyset approaches suitable for larger datasets.
-
-Example:
-
-```text
-GET /api/v1/orders?limit=25&cursor=01J...
+```http
+POST /api/v1/customers
+Content-Type: application/json
 ```
-
-Response metadata:
 
 ```json
 {
-  "data": [],
-  "pagination": {
-    "nextCursor": null,
-    "hasMore": false
+  "name": "Ada Lovelace",
+  "email": "ada@example.com"
+}
+```
+
+Successful response:
+
+```json
+{
+  "data": {
+    "id": "generated-uuid",
+    "name": "Ada Lovelace",
+    "email": "ada@example.com",
+    "createdAt": "2026-09-06T11:00:00.000Z",
+    "updatedAt": "2026-09-06T11:00:00.000Z"
   }
 }
 ```
 
-### Filtering and Sorting
+## Error Contract
 
-```text
-GET /api/v1/orders?status=pending&sort=-createdAt&limit=25
-```
+Known failures return stable error codes rather than framework exceptions.
 
-Filtering will be explicitly allow-listed so arbitrary query parameters cannot accidentally become database operations.
+| Condition | Status | Code |
+| --- | ---: | --- |
+| Validation failure | 422 | `VALIDATION_ERROR` |
+| Duplicate email | 409 | `CONFLICT` |
+| Customer not found | 404 | `NOT_FOUND` |
+| Route not found | 404 | `ROUTE_NOT_FOUND` |
+| Unexpected failure | 500 | `INTERNAL_ERROR` |
 
-### Validation
-
-Validation will occur at the HTTP boundary before data reaches application services. Invalid input will produce deterministic machine-readable errors.
+Example:
 
 ```json
 {
   "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Request validation failed",
-    "details": []
+    "code": "CONFLICT",
+    "message": "A customer with this email already exists"
   }
 }
 ```
 
-## Error Model
-
-Planned error categories include:
-
-| Condition | HTTP Status |
-| --- | ---: |
-| Invalid request | 400 |
-| Unauthenticated | 401 |
-| Forbidden operation | 403 |
-| Resource not found | 404 |
-| State conflict | 409 |
-| Validation failure | 422 |
-| Rate exceeded | 429 |
-| Unexpected server failure | 500 |
-
-Internal exceptions will not be exposed directly to clients.
-
-## API Versioning
-
-Initial endpoints will use explicit URI versioning:
-
-```text
-/api/v1/...
-```
-
-The design will isolate transport DTOs from domain objects so future versions can evolve without forcing unnecessary changes into core business logic.
-
-## Proposed Project Structure
+## Repository Structure
 
 ```text
 enterprise-rest-api/
 ├── src/
-│   ├── api/
-│   │   ├── controllers/
-│   │   ├── middleware/
-│   │   ├── routes/
-│   │   └── validators/
 │   ├── application/
-│   │   ├── dto/
-│   │   ├── services/
-│   │   └── use-cases/
+│   │   └── customer-service.ts
 │   ├── domain/
-│   │   ├── entities/
-│   │   ├── errors/
-│   │   └── repositories/
+│   │   ├── customer.ts
+│   │   └── customer-repository.ts
 │   ├── infrastructure/
-│   │   ├── database/
-│   │   ├── logging/
-│   │   └── repositories/
-│   ├── config/
+│   │   └── in-memory-customer-repository.ts
+│   ├── app.ts
 │   └── server.ts
-├── prisma/
 ├── tests/
-│   ├── unit/
-│   ├── integration/
 │   └── e2e/
+│       └── customers.test.ts
 ├── docs/
 │   ├── architecture.md
 │   └── openapi.yaml
 ├── .github/workflows/
-├── Dockerfile
-├── docker-compose.yml
+│   └── ci.yml
 ├── .env.example
+├── .gitignore
+├── Dockerfile
+├── package.json
+├── tsconfig.json
 └── README.md
 ```
 
-## Database Design
+## Running Locally
 
-PostgreSQL is planned as the primary persistence layer. Database concerns will include:
+Requirements:
 
-- explicit primary and foreign keys;
-- unique and check constraints;
-- indexes based on query patterns;
-- transactional writes for multi-step state changes;
-- migrations committed to source control;
-- development/test seed data separated from production configuration.
+- Node.js 22+
+- npm
 
-## Reliability Considerations
-
-The implementation roadmap includes:
-
-- request correlation IDs;
-- structured application logs;
-- graceful process shutdown;
-- database connection lifecycle management;
-- bounded request timeouts;
-- idempotency for appropriate write operations;
-- health and readiness endpoints.
-
-Proposed operational endpoints:
-
-```text
-GET /health
-GET /ready
+```bash
+npm install
+npm run dev
 ```
 
-## Testing Strategy
+The default server address is:
 
-### Unit Tests
+```text
+http://localhost:3000
+```
 
-Domain rules and application use cases should be tested without requiring HTTP or a real database.
+## Validation Commands
 
-### Integration Tests
+```bash
+npm run typecheck
+npm test
+npm run build
+```
 
-Repository implementations and database behaviour should be validated against a disposable PostgreSQL test environment.
+The end-to-end test suite currently validates:
 
-### End-to-End Tests
+- customer creation;
+- resource retrieval;
+- updates;
+- deletion;
+- validation failures;
+- duplicate-email conflicts.
 
-Critical workflows should execute through the HTTP interface and verify status codes, response contracts and persistence side effects.
+## Docker
 
-## CI/CD Roadmap
+Build the image:
 
-GitHub Actions will eventually execute:
+```bash
+docker build -t enterprise-rest-api .
+```
+
+Run it:
+
+```bash
+docker run --rm -p 3000:3000 enterprise-rest-api
+```
+
+## CI/CD
+
+GitHub Actions runs on pushes to `main` and pull requests. The pipeline performs:
 
 ```text
 Checkout
    |
-Install Dependencies
+Setup Node.js
    |
-Formatting / Lint
+Install Dependencies
    |
 Type Check
    |
-Unit Tests
-   |
-Integration Tests
+Tests
    |
 Build
-   |
-Container Build
 ```
 
-Deployment jobs will be introduced separately from pull-request validation.
+The workflow has been exercised on GitHub Actions; the TypeScript patch-model issue found during CI was corrected and a subsequent CI run completed successfully.
 
-## Containerization
+## OpenAPI
 
-The planned local environment will use Docker Compose to provide the API and PostgreSQL with reproducible configuration. The production image will use a multi-stage Docker build to separate dependency/build tooling from the runtime image.
+The API contract is documented in:
 
-## Observability
+```text
+docs/openapi.yaml
+```
 
-Planned operational telemetry includes:
-
-- structured JSON logs;
-- request duration;
-- response status distribution;
-- error counts;
-- database latency;
-- application health;
-- correlation identifiers across request processing.
+This file documents the customer endpoints, request schemas and principal response states.
 
 ## Engineering Roadmap
 
-- [x] Define repository purpose and architecture.
-- [x] Document API conventions and error model.
-- [ ] Bootstrap TypeScript backend.
-- [ ] Add PostgreSQL and Prisma schema.
-- [ ] Implement first domain resources.
-- [ ] Add validation and centralized error handling.
-- [ ] Generate OpenAPI specification.
-- [ ] Add unit and integration tests.
-- [ ] Add Docker development environment.
-- [ ] Add GitHub Actions CI pipeline.
-- [ ] Add observability and operational endpoints.
-- [ ] Publish deployment documentation.
+- [x] Define architecture and API conventions
+- [x] Bootstrap TypeScript backend
+- [x] Implement customer domain resource
+- [x] Add request validation
+- [x] Add centralized error handling
+- [x] Add end-to-end tests
+- [x] Add OpenAPI specification
+- [x] Add Docker image
+- [x] Add GitHub Actions CI
+- [x] Add health/readiness endpoints
+- [x] Add graceful shutdown
+- [ ] Add PostgreSQL + Prisma
+- [ ] Add migrations and seed data
+- [ ] Add cursor pagination
+- [ ] Add integration tests against PostgreSQL
+- [ ] Add structured logging and correlation IDs
+- [ ] Add metrics/tracing
+- [ ] Add deployment manifests
 
-## What This Project Demonstrates
+## Engineering Focus
 
-This repository is designed to demonstrate practical backend engineering skills including API contract design, layered architecture, relational persistence, validation, error handling, automated testing, containerization, CI/CD and production-readiness considerations.
-
-## License
-
-This project is maintained as part of a software engineering portfolio. Licensing information will be finalized as the implementation matures.
+This project is intended to demonstrate backend software engineering rather than only CRUD functionality: dependency inversion, explicit service boundaries, API contracts, deterministic failure semantics, automated testing, container packaging and continuous integration.
