@@ -1,6 +1,6 @@
 import { Prisma, type Customer as PrismaCustomer } from "@prisma/client";
 import type { CreateCustomerInput, Customer, CustomerId, UpdateCustomerInput } from "../domain/customer.js";
-import { RepositoryConflictError, type CustomerRepository } from "../domain/customer-repository.js";
+import { RepositoryConflictError, type CustomerListOptions, type CustomerPage, type CustomerRepository } from "../domain/customer-repository.js";
 import { prisma } from "./prisma.js";
 
 function toDomain(customer: PrismaCustomer): Customer {
@@ -21,9 +21,30 @@ function translateWriteError(error: unknown): never {
 }
 
 export class PrismaCustomerRepository implements CustomerRepository {
-  async list(): Promise<Customer[]> {
-    const customers = await prisma.customer.findMany({ orderBy: { createdAt: "desc" } });
-    return customers.map(toDomain);
+  async list(options: CustomerListOptions): Promise<CustomerPage> {
+    const query = options.query?.trim();
+    const customers = await prisma.customer.findMany({
+      ...(options.cursor ? { cursor: { id: options.cursor }, skip: 1 } : {}),
+      ...(query ? {
+        where: {
+          OR: [
+            { name: { contains: query, mode: "insensitive" } },
+            { email: { contains: query.toLowerCase(), mode: "insensitive" } }
+          ]
+        }
+      } : {}),
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: options.limit + 1
+    });
+
+    const hasMore = customers.length > options.limit;
+    const pageCustomers = hasMore ? customers.slice(0, options.limit) : customers;
+    const items = pageCustomers.map(toDomain);
+
+    return {
+      items,
+      nextCursor: hasMore ? items.at(-1)?.id ?? null : null
+    };
   }
 
   async findById(id: CustomerId): Promise<Customer | null> {
