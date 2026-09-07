@@ -33,6 +33,16 @@ describe("customer API", () => {
     await request(app).get(`/api/v1/customers/${id}`).expect(404);
   });
 
+  it("applies baseline HTTP security headers", async () => {
+    const app = createApp();
+    const response = await request(app).get("/health").expect(200);
+
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    expect(response.headers["x-frame-options"]).toBe("SAMEORIGIN");
+    expect(response.headers["content-security-policy"]).toBeTruthy();
+    expect(response.headers["x-powered-by"]).toBeUndefined();
+  });
+
   it("generates and preserves request correlation IDs", async () => {
     const app = createApp();
     const generated = await request(app).get("/health").expect(200);
