@@ -1,6 +1,6 @@
 # Enterprise REST API
 
-A production-oriented TypeScript backend demonstrating layered REST API design, validation, deterministic error handling, replaceable persistence, PostgreSQL integration testing, cursor pagination, filtering, structured HTTP logging, request correlation, containerization and CI.
+A production-oriented TypeScript backend demonstrating layered REST API design, validation, deterministic error handling, replaceable persistence, PostgreSQL integration testing, cursor pagination, filtering, structured HTTP logging, request correlation, Prometheus-compatible metrics, W3C trace-context propagation, containerization and CI.
 
 ## Current Status
 
@@ -27,6 +27,10 @@ The repository contains a working customer API with in-memory and Prisma/Postgre
 - request correlation through generated/preserved `x-request-id`
 - structured JSON HTTP completion logging
 - structured unexpected-error logging
+- Prometheus-compatible `/metrics` endpoint
+- request-count, cumulative-duration and process-uptime metrics
+- W3C `traceparent` parsing and propagation
+- per-request trace/span identifiers included in structured logs
 - health and readiness endpoints
 - graceful HTTP and Prisma shutdown
 - Vitest + Supertest end-to-end API tests
@@ -46,6 +50,7 @@ The repository contains a working customer API with in-memory and Prisma/Postgre
 | HTTP | Express |
 | Validation | Zod |
 | Persistence | In-memory + PostgreSQL/Prisma |
+| Observability | Structured JSON logs + Prometheus text metrics + W3C Trace Context |
 | Testing | Vitest + Supertest |
 | API Contract | OpenAPI 3 |
 | Containers | Docker + Docker Compose |
@@ -61,8 +66,10 @@ Express HTTP API
   |
   +-- validation
   +-- cursor pagination/filtering
-  +-- correlation ID
+  +-- request correlation
+  +-- W3C trace context
   +-- structured logging
+  +-- HTTP metrics
   +-- response/error mapping
   |
   v
@@ -85,6 +92,7 @@ The application layer depends on the repository abstraction rather than a databa
 ```text
 GET    /health
 GET    /ready
+GET    /metrics
 
 GET    /api/v1/customers?limit=20&cursor=<uuid>&q=<search>
 POST   /api/v1/customers
@@ -95,7 +103,9 @@ DELETE /api/v1/customers/:customerId
 
 Customer listing responses include `meta.limit` and `meta.nextCursor`. The `q` parameter performs a case-insensitive substring search across customer name and email. Page size is constrained to 1–100 records.
 
-All responses include an `x-request-id` header. A caller-provided value is preserved; otherwise the service generates a UUID. Completed requests emit JSON log records containing request ID, method, path, status code and duration.
+All responses include an `x-request-id` header. A caller-provided value is preserved; otherwise the service generates a UUID. Requests also accept an optional W3C `traceparent` header. The service preserves the incoming trace ID, generates a new request span ID, returns a child `traceparent`, and includes trace/span identifiers in its JSON completion logs.
+
+`GET /metrics` exposes Prometheus text-format metrics for HTTP request totals, cumulative request duration and process uptime. This is intentionally dependency-light and does not claim a complete monitoring backend; Prometheus/Grafana deployment remains an infrastructure concern.
 
 ## PostgreSQL
 
@@ -127,7 +137,7 @@ npm run build
 docker build -t enterprise-rest-api .
 ```
 
-The test suite includes API-level pagination/filtering coverage and real PostgreSQL integration tests. CI starts PostgreSQL 16, deploys committed migrations, executes the test suite, builds the TypeScript output and verifies the Docker image.
+The test suite includes API-level pagination/filtering, metrics and trace-context coverage plus real PostgreSQL integration tests. CI starts PostgreSQL 16, deploys committed migrations, executes the test suite, builds the TypeScript output and verifies the Docker image.
 
 ## Error Contract
 
@@ -160,9 +170,11 @@ The test suite includes API-level pagination/filtering coverage and real Postgre
 - [x] Add structured JSON logging
 - [x] Add Docker Compose PostgreSQL environment
 - [x] Add cursor pagination and customer filtering
-- [ ] Add metrics and distributed tracing
+- [x] Add Prometheus-compatible service metrics
+- [x] Add W3C trace-context propagation foundation
+- [ ] Add OpenTelemetry exporter/backend integration for full distributed tracing
 - [ ] Add deployment manifests
 
 ## Engineering Focus
 
-This project demonstrates backend engineering beyond basic CRUD: dependency inversion, explicit service boundaries, deterministic failure semantics, migration-aware persistence, cursor pagination, query filtering, real database integration testing, operational correlation and logging, containerized local development and CI-backed verification.
+This project demonstrates backend engineering beyond basic CRUD: dependency inversion, explicit service boundaries, deterministic failure semantics, migration-aware persistence, cursor pagination, query filtering, real database integration testing, operational correlation, metrics and trace context, containerized local development and CI-backed verification.
