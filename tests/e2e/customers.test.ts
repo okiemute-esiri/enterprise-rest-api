@@ -55,8 +55,10 @@ describe("customer API", () => {
       .expect(200);
 
     const returned = response.headers.traceparent as string;
-    expect(returned).toMatch(new RegExp(`^00-${traceId}-[0-9a-f]{16}-01$`));
-    expect(returned).not.toContain(parentSpanId);
+    const match = returned.match(/^00-([0-9a-f]{32})-([0-9a-f]{16})-01$/);
+    expect(match).not.toBeNull();
+    expect(match?.[1]).toBe(traceId);
+    expect(match?.[2]).not.toBe(parentSpanId);
   });
 
   it("exposes Prometheus-compatible HTTP metrics", async () => {
