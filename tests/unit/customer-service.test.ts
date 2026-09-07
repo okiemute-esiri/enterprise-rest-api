@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { ConflictError, CustomerService } from "../../src/application/customer-service.js";
-import { RepositoryConflictError, type CustomerRepository } from "../../src/domain/customer-repository.js";
+import {
+  RepositoryConflictError,
+  type CustomerListOptions,
+  type CustomerPage,
+  type CustomerRepository
+} from "../../src/domain/customer-repository.js";
 import type { CreateCustomerInput, Customer, CustomerId, UpdateCustomerInput } from "../../src/domain/customer.js";
 
 class ConflictRepository implements CustomerRepository {
-  list(): Promise<Customer[]> {
-    return Promise.resolve([]);
+  list(_options: CustomerListOptions): Promise<CustomerPage> {
+    return Promise.resolve({ items: [], nextCursor: null });
   }
 
   findById(_id: CustomerId): Promise<Customer | null> {
