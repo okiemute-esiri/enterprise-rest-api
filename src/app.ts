@@ -1,4 +1,12 @@
 import { randomUUID } from "node:crypto";
+import {
+  context,
+  isSpanContextValid,
+  propagation,
+  SpanKind,
+  SpanStatusCode,
+  trace as otelTrace
+} from "@opentelemetry/api";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { CustomerService, ConflictError, NotFoundError } from "./application/customer-service.js";
@@ -9,6 +17,8 @@ import {
   recordHttpRequest,
   renderPrometheusMetrics
 } from "./infrastructure/observability.js";
+
+const tracer = otelTrace.getTracer("enterprise-rest-api");
 
 const createCustomerSchema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -41,22 +51,53 @@ export function createApp(
     const startedAt = process.hrtime.bigint();
     const incomingRequestId = req.header("x-request-id")?.trim();
     const requestId = incomingRequestId || randomUUID();
-    const trace = createTraceContext(req.header("traceparent"));
+    const fallbackTrace = createTraceContext(req.header("traceparent"));
+    const parentContext = propagation.extract(context.active(), req.headers);
+    const span = tracer.startSpan(
+      `${req.method} ${req.path}`,
+      {
+        kind: SpanKind.SERVER,
+        attributes: {
+          "http.request.method": req.method,
+          "url.path": req.path,
+          "http.request_id": requestId
+        }
+      },
+      parentContext
+    );
+    const spanContext = span.spanContext();
+    const traceContext = isSpanContextValid(spanContext)
+      ? {
+          traceId: spanContext.traceId,
+          parentSpanId: fallbackTrace.parentSpanId,
+          spanId: spanContext.spanId,
+          traceparent: `00-${spanContext.traceId}-${spanContext.spanId}-${(spanContext.traceFlags & 1) === 1 ? "01" : "00"}`
+        }
+      : fallbackTrace;
 
     res.setHeader("x-request-id", requestId);
-    res.setHeader("traceparent", trace.traceparent);
+    res.setHeader("traceparent", traceContext.traceparent);
 
     res.on("finish", () => {
       const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
       const routePath = typeof req.route?.path === "string" ? req.route.path : req.path;
       recordHttpRequest(req.method, routePath, res.statusCode, durationMs);
+      span.setAttributes({
+        "http.response.status_code": res.statusCode,
+        "http.route": routePath
+      });
+      if (res.statusCode >= 500) {
+        span.setStatus({ code: SpanStatusCode.ERROR });
+      }
+      span.end();
+
       console.log(JSON.stringify({
         level: "info",
         event: "http_request_completed",
         requestId,
-        traceId: trace.traceId,
-        spanId: trace.spanId,
-        parentSpanId: trace.parentSpanId,
+        traceId: traceContext.traceId,
+        spanId: traceContext.spanId,
+        parentSpanId: traceContext.parentSpanId,
         method: req.method,
         path: req.path,
         statusCode: res.statusCode,
@@ -64,7 +105,7 @@ export function createApp(
       }));
     });
 
-    next();
+    context.with(otelTrace.setSpan(parentContext, span), () => next());
   });
 
   app.get("/health", (_req, res) => {
