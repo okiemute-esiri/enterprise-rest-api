@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { CustomerService, ConflictError, NotFoundError } from "./application/customer-service.js";
@@ -20,6 +21,27 @@ export function createApp(repository: CustomerRepository = new InMemoryCustomerR
 
   app.disable("x-powered-by");
   app.use(express.json({ limit: "1mb" }));
+  app.use((req, res, next) => {
+    const startedAt = process.hrtime.bigint();
+    const incomingRequestId = req.header("x-request-id")?.trim();
+    const requestId = incomingRequestId || randomUUID();
+    res.setHeader("x-request-id", requestId);
+
+    res.on("finish", () => {
+      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      console.log(JSON.stringify({
+        level: "info",
+        event: "http_request_completed",
+        requestId,
+        method: req.method,
+        path: req.path,
+        statusCode: res.statusCode,
+        durationMs: Number(durationMs.toFixed(2))
+      }));
+    });
+
+    next();
+  });
 
   app.get("/health", (_req, res) => {
     res.status(200).json({ status: "ok" });
@@ -81,7 +103,7 @@ export function createApp(repository: CustomerRepository = new InMemoryCustomerR
     });
   });
 
-  app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
     if (error instanceof z.ZodError) {
       return res.status(422).json({
         error: {
@@ -100,7 +122,14 @@ export function createApp(repository: CustomerRepository = new InMemoryCustomerR
       return res.status(409).json({ error: { code: "CONFLICT", message: error.message } });
     }
 
-    console.error(error);
+    console.error(JSON.stringify({
+      level: "error",
+      event: "unhandled_error",
+      requestId: res.getHeader("x-request-id"),
+      method: req.method,
+      path: req.path,
+      error: error instanceof Error ? { name: error.name, message: error.message } : { message: "Unknown error" }
+    }));
     return res.status(500).json({
       error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred" }
     });
