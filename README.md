@@ -1,6 +1,6 @@
 # Enterprise REST API
 
-A production-oriented TypeScript backend demonstrating layered REST API design, validation, deterministic error handling, replaceable persistence, PostgreSQL integration testing, structured HTTP logging, request correlation, containerization and CI.
+A production-oriented TypeScript backend demonstrating layered REST API design, validation, deterministic error handling, replaceable persistence, PostgreSQL integration testing, cursor pagination, filtering, structured HTTP logging, request correlation, containerization and CI.
 
 ## Current Status
 
@@ -20,7 +20,9 @@ The repository contains a working customer API with in-memory and Prisma/Postgre
 - normalized duplicate-email handling
 - Prisma uniqueness violations translated to repository conflicts
 - stable application-level `409` conflict semantics
-- Zod request validation
+- cursor-based customer pagination with configurable page size
+- case-insensitive customer filtering across name and email
+- Zod request and query validation
 - centralized structured error responses
 - request correlation through generated/preserved `x-request-id`
 - structured JSON HTTP completion logging
@@ -58,6 +60,7 @@ Client
 Express HTTP API
   |
   +-- validation
+  +-- cursor pagination/filtering
   +-- correlation ID
   +-- structured logging
   +-- response/error mapping
@@ -83,12 +86,14 @@ The application layer depends on the repository abstraction rather than a databa
 GET    /health
 GET    /ready
 
-GET    /api/v1/customers
+GET    /api/v1/customers?limit=20&cursor=<uuid>&q=<search>
 POST   /api/v1/customers
 GET    /api/v1/customers/:customerId
 PATCH  /api/v1/customers/:customerId
 DELETE /api/v1/customers/:customerId
 ```
+
+Customer listing responses include `meta.limit` and `meta.nextCursor`. The `q` parameter performs a case-insensitive substring search across customer name and email. Page size is constrained to 1–100 records.
 
 All responses include an `x-request-id` header. A caller-provided value is preserved; otherwise the service generates a UUID. Completed requests emit JSON log records containing request ID, method, path, status code and duration.
 
@@ -122,7 +127,7 @@ npm run build
 docker build -t enterprise-rest-api .
 ```
 
-The test suite includes both API-level tests and real PostgreSQL integration tests. CI starts PostgreSQL 16, deploys committed migrations, executes the test suite, builds the TypeScript output and verifies the Docker image.
+The test suite includes API-level pagination/filtering coverage and real PostgreSQL integration tests. CI starts PostgreSQL 16, deploys committed migrations, executes the test suite, builds the TypeScript output and verifies the Docker image.
 
 ## Error Contract
 
@@ -154,10 +159,10 @@ The test suite includes both API-level tests and real PostgreSQL integration tes
 - [x] Add request correlation IDs
 - [x] Add structured JSON logging
 - [x] Add Docker Compose PostgreSQL environment
-- [ ] Add cursor pagination and advanced filtering
+- [x] Add cursor pagination and customer filtering
 - [ ] Add metrics and distributed tracing
 - [ ] Add deployment manifests
 
 ## Engineering Focus
 
-This project demonstrates backend engineering beyond basic CRUD: dependency inversion, explicit service boundaries, deterministic failure semantics, migration-aware persistence, real database integration testing, operational correlation and logging, containerized local development and CI-backed verification.
+This project demonstrates backend engineering beyond basic CRUD: dependency inversion, explicit service boundaries, deterministic failure semantics, migration-aware persistence, cursor pagination, query filtering, real database integration testing, operational correlation and logging, containerized local development and CI-backed verification.
