@@ -1,10 +1,10 @@
 # Enterprise REST API
 
-A production-oriented TypeScript backend demonstrating layered REST API design, validation, deterministic error handling, replaceable persistence, PostgreSQL integration testing, cursor pagination, filtering, structured HTTP logging, request correlation, Prometheus-compatible metrics, W3C trace-context propagation, containerization, Kubernetes deployment configuration and CI.
+A production-oriented TypeScript backend demonstrating layered REST API design, validation, deterministic error handling, replaceable persistence, PostgreSQL integration testing, cursor pagination, filtering, structured HTTP logging, request correlation, Prometheus-compatible metrics, OpenTelemetry tracing, containerization, Kubernetes deployment configuration and CI.
 
 ## Current Status
 
-The repository contains a working customer API with in-memory and Prisma/PostgreSQL persistence behind the same repository contract. PostgreSQL behavior is verified in CI against a real PostgreSQL 16 service, while the in-memory adapter remains useful for deterministic API tests and zero-dependency local runs. Kubernetes deployment manifests are schema-validated in CI with kubeconform.
+The repository contains a working customer API with in-memory and Prisma/PostgreSQL persistence behind the same repository contract. PostgreSQL behavior is verified in CI against a real PostgreSQL 16 service, while the in-memory adapter remains useful for deterministic API tests and zero-dependency local runs. Kubernetes deployment manifests are schema-validated in CI with kubeconform. Optional OpenTelemetry OTLP/HTTP trace export is available when an OTLP endpoint is configured.
 
 ## Implemented
 
@@ -30,9 +30,11 @@ The repository contains a working customer API with in-memory and Prisma/Postgre
 - Prometheus-compatible `/metrics` endpoint
 - request-count, cumulative-duration and process-uptime metrics
 - W3C `traceparent` parsing and propagation
-- per-request trace/span identifiers included in structured logs
-- health and readiness endpoints
-- graceful HTTP and Prisma shutdown
+- OpenTelemetry server spans for HTTP requests
+- optional OTLP/HTTP trace export to an OpenTelemetry-compatible backend or collector
+- trace/span identifiers included in structured request logs
+- dependency-aware readiness with a real PostgreSQL connectivity check
+- graceful HTTP, Prisma and OpenTelemetry shutdown
 - Vitest + Supertest end-to-end API tests
 - PostgreSQL-backed Prisma integration tests
 - OpenAPI 3 specification
@@ -56,7 +58,7 @@ The repository contains a working customer API with in-memory and Prisma/Postgre
 | HTTP | Express |
 | Validation | Zod |
 | Persistence | In-memory + PostgreSQL/Prisma |
-| Observability | Structured JSON logs + Prometheus text metrics + W3C Trace Context |
+| Observability | Structured JSON logs + Prometheus text metrics + OpenTelemetry OTLP tracing |
 | Testing | Vitest + Supertest |
 | API Contract | OpenAPI 3 |
 | Containers | Docker + Docker Compose |
@@ -74,6 +76,7 @@ Express HTTP API
   +-- validation
   +-- cursor pagination/filtering
   +-- request correlation
+  +-- OpenTelemetry server span
   +-- W3C trace context
   +-- structured logging
   +-- HTTP metrics
@@ -90,6 +93,10 @@ CustomerRepository
           |
           v
       PostgreSQL
+
+OpenTelemetry span
+  |
+  `-- optional OTLP/HTTP exporter --> Collector / tracing backend
 ```
 
 The application layer depends on the repository abstraction rather than a database implementation. Tests can use deterministic in-memory persistence while production-style runs use PostgreSQL without changing business logic.
@@ -110,9 +117,31 @@ DELETE /api/v1/customers/:customerId
 
 Customer listing responses include `meta.limit` and `meta.nextCursor`. The `q` parameter performs a case-insensitive substring search across customer name and email. Page size is constrained to 1–100 records.
 
-All responses include an `x-request-id` header. A caller-provided value is preserved; otherwise the service generates a UUID. Requests also accept an optional W3C `traceparent` header. The service preserves the incoming trace ID, generates a new request span ID, returns a child `traceparent`, and includes trace/span identifiers in its JSON completion logs.
+All responses include an `x-request-id` header. A caller-provided value is preserved; otherwise the service generates a UUID. Requests also accept an optional W3C `traceparent` header. When OpenTelemetry export is enabled, the request middleware creates a server span and returns its trace/span context. When no SDK/exporter is configured, the existing dependency-light trace-context fallback remains active so correlation behavior is still available in local and test runs.
 
-`GET /metrics` exposes Prometheus text-format metrics for HTTP request totals, cumulative request duration and process uptime. This is intentionally dependency-light and does not claim a complete monitoring backend; Prometheus/Grafana deployment remains an infrastructure concern.
+`GET /metrics` exposes Prometheus text-format metrics for HTTP request totals, cumulative request duration and process uptime. Prometheus/Grafana deployment remains an infrastructure concern.
+
+## OpenTelemetry Tracing
+
+Trace export is opt-in. The application starts the OpenTelemetry Node SDK only when an OTLP endpoint is supplied. This prevents local and CI runs from attempting to send telemetry to a nonexistent collector.
+
+Use either a trace-specific endpoint:
+
+```env
+OTEL_SERVICE_NAME=enterprise-rest-api
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces
+```
+
+or a base OTLP/HTTP endpoint:
+
+```env
+OTEL_SERVICE_NAME=enterprise-rest-api
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+With the base endpoint, the application appends `/v1/traces`. Set `OTEL_SDK_DISABLED=true` to explicitly disable SDK initialization. The application flushes and shuts down the telemetry SDK as part of graceful process termination.
+
+This repository implements OTLP export capability but does not claim a hosted collector, Jaeger, Tempo, Honeycomb, Datadog or other live tracing backend unless one is configured externally.
 
 ## PostgreSQL
 
@@ -133,6 +162,8 @@ npm run dev
 ```
 
 Without `DATABASE_URL`, the server uses the in-memory repository.
+
+`GET /ready` performs a real PostgreSQL connectivity check when database persistence is enabled. If PostgreSQL is unavailable, readiness returns HTTP `503` rather than reporting the pod as ready.
 
 ## Kubernetes Deployment
 
@@ -160,7 +191,7 @@ npm run build
 docker build -t enterprise-rest-api .
 ```
 
-The test suite includes API-level pagination/filtering, metrics and trace-context coverage plus real PostgreSQL integration tests. CI starts PostgreSQL 16, deploys committed migrations, executes the test suite, builds the TypeScript output, verifies the Docker image and validates Kubernetes manifests with kubeconform.
+The test suite includes API-level pagination/filtering, dependency-aware readiness, metrics and trace-context coverage plus real PostgreSQL integration tests. CI starts PostgreSQL 16, deploys committed migrations, executes the test suite, builds the TypeScript output, verifies the Docker image and validates Kubernetes manifests with kubeconform.
 
 ## Error Contract
 
@@ -169,6 +200,7 @@ The test suite includes API-level pagination/filtering, metrics and trace-contex
 | Validation failure | 422 | `VALIDATION_ERROR` |
 | Duplicate email | 409 | `CONFLICT` |
 | Customer not found | 404 | `NOT_FOUND` |
+| Dependency unavailable | 503 | `DEPENDENCY_UNAVAILABLE` |
 | Route not found | 404 | `ROUTE_NOT_FOUND` |
 | Unexpected failure | 500 | `INTERNAL_ERROR` |
 
@@ -195,10 +227,11 @@ The test suite includes API-level pagination/filtering, metrics and trace-contex
 - [x] Add cursor pagination and customer filtering
 - [x] Add Prometheus-compatible service metrics
 - [x] Add W3C trace-context propagation foundation
+- [x] Add dependency-aware PostgreSQL readiness
 - [x] Add Kubernetes deployment manifests
 - [x] Validate Kubernetes manifests in CI
-- [ ] Add OpenTelemetry exporter/backend integration for full distributed tracing
+- [x] Add configurable OpenTelemetry OTLP/HTTP trace export
 
 ## Engineering Focus
 
-This project demonstrates backend engineering beyond basic CRUD: dependency inversion, explicit service boundaries, deterministic failure semantics, migration-aware persistence, cursor pagination, query filtering, real database integration testing, operational correlation, metrics and trace context, containerized local development, Kubernetes deployment configuration and CI-backed verification.
+This project demonstrates backend engineering beyond basic CRUD: dependency inversion, explicit service boundaries, deterministic failure semantics, migration-aware persistence, cursor pagination, query filtering, real database integration testing, dependency-aware readiness, operational correlation, metrics, OpenTelemetry tracing, containerized local development, Kubernetes deployment configuration and CI-backed verification.
