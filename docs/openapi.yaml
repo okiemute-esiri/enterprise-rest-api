@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Enterprise REST API
-  version: 1.0.0
+  version: 1.1.0
   description: Portfolio REST API demonstrating production-oriented backend engineering patterns.
 servers:
   - url: http://localhost:3000
@@ -18,10 +18,21 @@ paths:
       responses:
         '200':
           description: Service is ready
+  /metrics:
+    get:
+      summary: Prometheus-compatible service metrics
+      responses:
+        '200':
+          description: Metrics exposition in Prometheus text format
+          content:
+            text/plain:
+              schema:
+                type: string
   /api/v1/customers:
     get:
       summary: List customers
       parameters:
+        - $ref: '#/components/parameters/Traceparent'
         - in: query
           name: limit
           schema:
@@ -45,6 +56,9 @@ paths:
       responses:
         '200':
           description: Paginated customer collection
+          headers:
+            traceparent:
+              $ref: '#/components/headers/Traceparent'
           content:
             application/json:
               schema:
@@ -69,6 +83,8 @@ paths:
           description: Invalid query parameters
     post:
       summary: Create a customer
+      parameters:
+        - $ref: '#/components/parameters/Traceparent'
       requestBody:
         required: true
         content:
@@ -90,6 +106,7 @@ paths:
         schema:
           type: string
           format: uuid
+      - $ref: '#/components/parameters/Traceparent'
     get:
       summary: Get a customer
       responses:
@@ -122,6 +139,19 @@ paths:
         '404':
           description: Customer not found
 components:
+  parameters:
+    Traceparent:
+      in: header
+      name: traceparent
+      required: false
+      description: Optional W3C Trace Context parent propagated into the request span.
+      schema:
+        type: string
+  headers:
+    Traceparent:
+      description: W3C Trace Context value generated for the request span.
+      schema:
+        type: string
   schemas:
     Customer:
       type: object
