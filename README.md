@@ -1,41 +1,39 @@
 # Enterprise REST API
 
-A production-oriented TypeScript backend project demonstrating layered REST API design, validation, domain boundaries, automated tests, containerization, CI/CD, operational endpoints, API documentation and replaceable persistence.
+A production-oriented TypeScript backend demonstrating layered REST API design, validation, deterministic error handling, replaceable persistence, PostgreSQL integration testing, structured HTTP logging, request correlation, containerization and CI.
 
 ## Current Status
 
-The repository contains a working customer API with two persistence adapters behind the same domain repository contract. The in-memory adapter remains the zero-dependency default for tests and quick local runs, while PostgreSQL persistence is available through Prisma whenever `DATABASE_URL` is configured.
+The repository contains a working customer API with in-memory and Prisma/PostgreSQL persistence behind the same repository contract. PostgreSQL behavior is verified in CI against a real PostgreSQL 16 service, while the in-memory adapter remains useful for deterministic API tests and zero-dependency local runs.
 
-### Implemented
+## Implemented
 
-- TypeScript + Express service bootstrap
-- Strict TypeScript configuration
-- Versioned `/api/v1` customer endpoints
-- Customer domain model and repository contract
-- In-memory repository implementation
-- Prisma PostgreSQL repository implementation
-- Prisma schema and initial SQL migration
-- Runtime persistence selection through `DATABASE_URL`
-- Application service layer
+- Node.js 22 + TypeScript + Express
+- strict TypeScript configuration
+- versioned `/api/v1` customer API
+- customer domain model and repository contract
+- application service layer
+- in-memory repository adapter
+- Prisma/PostgreSQL repository adapter
+- Prisma schema and committed SQL migration
+- runtime persistence selection through `DATABASE_URL`
+- normalized duplicate-email handling
+- Prisma uniqueness violations translated to repository conflicts
+- stable application-level `409` conflict semantics
 - Zod request validation
-- Centralized structured error responses
-- Duplicate-email conflict handling
-- Health and readiness endpoints
-- End-to-end API tests with Vitest + Supertest
+- centralized structured error responses
+- request correlation through generated/preserved `x-request-id`
+- structured JSON HTTP completion logging
+- structured unexpected-error logging
+- health and readiness endpoints
+- graceful HTTP and Prisma shutdown
+- Vitest + Supertest end-to-end API tests
+- PostgreSQL-backed Prisma integration tests
 - OpenAPI 3 specification
-- Multi-stage Docker image with generated Prisma client
-- GitHub Actions CI pipeline with Prisma generation and Docker verification
-- Graceful HTTP server and Prisma shutdown
-- Architecture documentation
-
-### Planned
-
-- Database-backed integration tests
-- Cursor pagination and advanced filtering
-- Structured JSON logging and correlation IDs
-- Metrics and tracing
-- Docker Compose development stack with PostgreSQL
-- Deployment manifests
+- architecture documentation
+- multi-stage Docker image with generated Prisma client
+- Docker Compose PostgreSQL development stack
+- GitHub Actions CI with PostgreSQL 16, migrations, tests, build and Docker verification
 
 ## Technology Stack
 
@@ -48,7 +46,7 @@ The repository contains a working customer API with two persistence adapters beh
 | Persistence | In-memory + PostgreSQL/Prisma |
 | Testing | Vitest + Supertest |
 | API Contract | OpenAPI 3 |
-| Containers | Docker |
+| Containers | Docker + Docker Compose |
 | CI/CD | GitHub Actions |
 
 ## Architecture
@@ -59,15 +57,16 @@ Client
   v
 Express HTTP API
   |
-  +-- request validation
-  +-- routing
+  +-- validation
+  +-- correlation ID
+  +-- structured logging
   +-- response/error mapping
   |
   v
 CustomerService
   |
   v
-CustomerRepository interface
+CustomerRepository
   |
   +-- InMemoryCustomerRepository
   `-- PrismaCustomerRepository
@@ -76,35 +75,7 @@ CustomerRepository interface
       PostgreSQL
 ```
 
-The application layer depends on the repository abstraction rather than a database implementation. Tests can therefore use deterministic in-memory persistence while production-style runs use PostgreSQL without changing service logic.
-
-## Persistence Selection
-
-Without `DATABASE_URL`, the server uses the in-memory repository.
-
-With `DATABASE_URL`, it uses Prisma/PostgreSQL:
-
-```env
-DATABASE_URL=postgresql://app:app@localhost:5432/enterprise_rest_api?schema=public
-```
-
-Generate the Prisma client:
-
-```bash
-npm run prisma:generate
-```
-
-Apply migrations during development:
-
-```bash
-npm run prisma:migrate
-```
-
-Apply committed migrations in a deployment environment:
-
-```bash
-npm run prisma:deploy
-```
+The application layer depends on the repository abstraction rather than a database implementation. Tests can use deterministic in-memory persistence while production-style runs use PostgreSQL without changing business logic.
 
 ## API Endpoints
 
@@ -119,37 +90,41 @@ PATCH  /api/v1/customers/:customerId
 DELETE /api/v1/customers/:customerId
 ```
 
-### Create Customer
+All responses include an `x-request-id` header. A caller-provided value is preserved; otherwise the service generates a UUID. Completed requests emit JSON log records containing request ID, method, path, status code and duration.
 
-```http
-POST /api/v1/customers
-Content-Type: application/json
+## PostgreSQL
+
+Set `DATABASE_URL` to enable Prisma/PostgreSQL persistence:
+
+```env
+DATABASE_URL=postgresql://app:app@localhost:5432/enterprise_rest_api?schema=public
 ```
 
-```json
-{
-  "name": "Ada Lovelace",
-  "email": "ada@example.com"
-}
+For the local PostgreSQL stack:
+
+```bash
+docker compose up -d postgres
+npm install
+npm run prisma:generate
+npm run prisma:deploy
+npm run dev
 ```
 
-Successful response:
+Without `DATABASE_URL`, the server uses the in-memory repository.
 
-```json
-{
-  "data": {
-    "id": "generated-uuid",
-    "name": "Ada Lovelace",
-    "email": "ada@example.com",
-    "createdAt": "2026-09-06T11:00:00.000Z",
-    "updatedAt": "2026-09-06T11:00:00.000Z"
-  }
-}
+## Validation
+
+```bash
+npm run prisma:generate
+npm run typecheck
+npm test
+npm run build
+docker build -t enterprise-rest-api .
 ```
+
+The test suite includes both API-level tests and real PostgreSQL integration tests. CI starts PostgreSQL 16, deploys committed migrations, executes the test suite, builds the TypeScript output and verifies the Docker image.
 
 ## Error Contract
-
-Known failures return stable error codes rather than framework exceptions.
 
 | Condition | Status | Code |
 | --- | ---: | --- |
@@ -159,111 +134,11 @@ Known failures return stable error codes rather than framework exceptions.
 | Route not found | 404 | `ROUTE_NOT_FOUND` |
 | Unexpected failure | 500 | `INTERNAL_ERROR` |
 
-## Repository Structure
-
-```text
-enterprise-rest-api/
-├── prisma/
-│   ├── migrations/
-│   │   └── 20260906132000_init/
-│   │       └── migration.sql
-│   └── schema.prisma
-├── src/
-│   ├── application/
-│   │   └── customer-service.ts
-│   ├── domain/
-│   │   ├── customer.ts
-│   │   └── customer-repository.ts
-│   ├── infrastructure/
-│   │   ├── in-memory-customer-repository.ts
-│   │   ├── prisma-customer-repository.ts
-│   │   └── prisma.ts
-│   ├── app.ts
-│   └── server.ts
-├── tests/
-│   └── e2e/
-│       └── customers.test.ts
-├── docs/
-│   ├── architecture.md
-│   └── openapi.yaml
-├── .github/workflows/
-│   └── ci.yml
-├── .env.example
-├── .gitignore
-├── Dockerfile
-├── package.json
-├── tsconfig.json
-└── README.md
-```
-
-## Running Locally
-
-Requirements:
-
-- Node.js 22+
-- npm
-
-For an in-memory run:
-
-```bash
-npm install
-npm run dev
-```
-
-For PostgreSQL persistence, set `DATABASE_URL`, generate the client, apply the migration, then start the service.
-
-## Validation Commands
-
-```bash
-npm run prisma:generate
-npm run typecheck
-npm test
-npm run build
-```
-
-The end-to-end tests intentionally use the in-memory repository so CI remains deterministic without requiring a database service. Database-backed integration tests are a separate planned milestone.
-
-## Docker
-
-Build the image:
-
-```bash
-docker build -t enterprise-rest-api .
-```
-
-The image includes the generated Prisma client. At runtime, provide `DATABASE_URL` to enable PostgreSQL persistence or omit it to use in-memory persistence.
-
-## CI/CD
-
-GitHub Actions now validates the full build path:
-
-```text
-Checkout
-   |
-Setup Node.js
-   |
-Install Dependencies
-   |
-Generate Prisma Client
-   |
-Type Check
-   |
-Tests
-   |
-Build
-   |
-Docker Image Build
-```
-
-## OpenAPI
-
-The API contract is documented in `docs/openapi.yaml`.
-
 ## Engineering Roadmap
 
 - [x] Define architecture and API conventions
 - [x] Bootstrap TypeScript backend
-- [x] Implement customer domain resource
+- [x] Implement customer resource
 - [x] Add request validation
 - [x] Add centralized error handling
 - [x] Add end-to-end tests
@@ -272,15 +147,17 @@ The API contract is documented in `docs/openapi.yaml`.
 - [x] Add GitHub Actions CI
 - [x] Add health/readiness endpoints
 - [x] Add graceful shutdown
-- [x] Add PostgreSQL/Prisma schema and repository adapter
+- [x] Add PostgreSQL/Prisma persistence
 - [x] Add initial migration
-- [ ] Add PostgreSQL integration tests
-- [ ] Add cursor pagination
-- [ ] Add structured logging and correlation IDs
-- [ ] Add metrics/tracing
-- [ ] Add Docker Compose PostgreSQL environment
+- [x] Add PostgreSQL integration tests
+- [x] Add stable persistence conflict translation
+- [x] Add request correlation IDs
+- [x] Add structured JSON logging
+- [x] Add Docker Compose PostgreSQL environment
+- [ ] Add cursor pagination and advanced filtering
+- [ ] Add metrics and distributed tracing
 - [ ] Add deployment manifests
 
 ## Engineering Focus
 
-This project is intended to demonstrate backend software engineering rather than only CRUD functionality: dependency inversion, explicit service boundaries, API contracts, deterministic failure semantics, replaceable persistence, migration-aware database design, automated testing, container packaging and continuous integration.
+This project demonstrates backend engineering beyond basic CRUD: dependency inversion, explicit service boundaries, deterministic failure semantics, migration-aware persistence, real database integration testing, operational correlation and logging, containerized local development and CI-backed verification.
