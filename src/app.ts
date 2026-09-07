@@ -4,6 +4,11 @@ import { z } from "zod";
 import { CustomerService, ConflictError, NotFoundError } from "./application/customer-service.js";
 import type { CustomerRepository } from "./domain/customer-repository.js";
 import { InMemoryCustomerRepository } from "./infrastructure/in-memory-customer-repository.js";
+import {
+  createTraceContext,
+  recordHttpRequest,
+  renderPrometheusMetrics
+} from "./infrastructure/observability.js";
 
 const createCustomerSchema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -31,14 +36,22 @@ export function createApp(repository: CustomerRepository = new InMemoryCustomerR
     const startedAt = process.hrtime.bigint();
     const incomingRequestId = req.header("x-request-id")?.trim();
     const requestId = incomingRequestId || randomUUID();
+    const trace = createTraceContext(req.header("traceparent"));
+
     res.setHeader("x-request-id", requestId);
+    res.setHeader("traceparent", trace.traceparent);
 
     res.on("finish", () => {
       const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      const routePath = typeof req.route?.path === "string" ? req.route.path : req.path;
+      recordHttpRequest(req.method, routePath, res.statusCode, durationMs);
       console.log(JSON.stringify({
         level: "info",
         event: "http_request_completed",
         requestId,
+        traceId: trace.traceId,
+        spanId: trace.spanId,
+        parentSpanId: trace.parentSpanId,
         method: req.method,
         path: req.path,
         statusCode: res.statusCode,
@@ -55,6 +68,10 @@ export function createApp(repository: CustomerRepository = new InMemoryCustomerR
 
   app.get("/ready", (_req, res) => {
     res.status(200).json({ status: "ready" });
+  });
+
+  app.get("/metrics", (_req, res) => {
+    res.type("text/plain; version=0.0.4; charset=utf-8").send(renderPrometheusMetrics());
   });
 
   app.get("/api/v1/customers", async (req, res, next) => {
@@ -141,6 +158,7 @@ export function createApp(repository: CustomerRepository = new InMemoryCustomerR
       level: "error",
       event: "unhandled_error",
       requestId: res.getHeader("x-request-id"),
+      traceparent: res.getHeader("traceparent"),
       method: req.method,
       path: req.path,
       error: error instanceof Error ? { name: error.name, message: error.message } : { message: "Unknown error" }
