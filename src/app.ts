@@ -8,6 +8,7 @@ import {
   trace as otelTrace
 } from "@opentelemetry/api";
 import express, { type NextFunction, type Request, type Response } from "express";
+import helmet from "helmet";
 import { z } from "zod";
 import { CustomerService, ConflictError, NotFoundError } from "./application/customer-service.js";
 import type { CustomerRepository } from "./domain/customer-repository.js";
@@ -46,6 +47,7 @@ export function createApp(
   const service = new CustomerService(repository);
 
   app.disable("x-powered-by");
+  app.use(helmet());
   app.use(express.json({ limit: "1mb" }));
   app.use((req, res, next) => {
     const startedAt = process.hrtime.bigint();
