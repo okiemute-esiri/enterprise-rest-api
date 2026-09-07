@@ -1,5 +1,5 @@
 import type { CreateCustomerInput, Customer, CustomerId, UpdateCustomerInput } from "../domain/customer.js";
-import { RepositoryConflictError, type CustomerRepository } from "../domain/customer-repository.js";
+import { RepositoryConflictError, type CustomerListOptions, type CustomerPage, type CustomerRepository } from "../domain/customer-repository.js";
 
 export class ConflictError extends Error {}
 export class NotFoundError extends Error {}
@@ -7,8 +7,8 @@ export class NotFoundError extends Error {}
 export class CustomerService {
   constructor(private readonly repository: CustomerRepository) {}
 
-  list(): Promise<Customer[]> {
-    return this.repository.list();
+  list(options: CustomerListOptions): Promise<CustomerPage> {
+    return this.repository.list(options);
   }
 
   async get(id: CustomerId): Promise<Customer> {
