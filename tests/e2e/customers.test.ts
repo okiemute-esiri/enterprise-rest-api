@@ -45,6 +45,31 @@ describe("customer API", () => {
     expect(supplied.headers["x-request-id"]).toBe("enterprise-rest-api-request-123");
   });
 
+  it("propagates W3C trace context and generates a child span", async () => {
+    const app = createApp();
+    const traceId = "0123456789abcdef0123456789abcdef";
+    const parentSpanId = "0123456789abcdef";
+    const response = await request(app)
+      .get("/health")
+      .set("traceparent", `00-${traceId}-${parentSpanId}-01`)
+      .expect(200);
+
+    const returned = response.headers.traceparent as string;
+    expect(returned).toMatch(new RegExp(`^00-${traceId}-[0-9a-f]{16}-01$`));
+    expect(returned).not.toContain(parentSpanId);
+  });
+
+  it("exposes Prometheus-compatible HTTP metrics", async () => {
+    const app = createApp();
+    await request(app).get("/health").expect(200);
+    const metrics = await request(app).get("/metrics").expect(200);
+
+    expect(metrics.headers["content-type"]).toContain("text/plain");
+    expect(metrics.text).toContain("enterprise_rest_api_http_requests_total");
+    expect(metrics.text).toContain("enterprise_rest_api_http_request_duration_seconds_sum");
+    expect(metrics.text).toContain("enterprise_rest_api_process_uptime_seconds");
+  });
+
   it("paginates customer listings and returns a cursor", async () => {
     const app = createApp();
     for (const [name, email] of [
