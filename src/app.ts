@@ -26,7 +26,12 @@ const listCustomersSchema = z.object({
   q: z.string().trim().min(1).max(100).optional()
 });
 
-export function createApp(repository: CustomerRepository = new InMemoryCustomerRepository()) {
+type ReadinessCheck = () => Promise<void>;
+
+export function createApp(
+  repository: CustomerRepository = new InMemoryCustomerRepository(),
+  readinessCheck: ReadinessCheck = async () => undefined
+) {
   const app = express();
   const service = new CustomerService(repository);
 
@@ -66,8 +71,16 @@ export function createApp(repository: CustomerRepository = new InMemoryCustomerR
     res.status(200).json({ status: "ok" });
   });
 
-  app.get("/ready", (_req, res) => {
-    res.status(200).json({ status: "ready" });
+  app.get("/ready", async (_req, res) => {
+    try {
+      await readinessCheck();
+      res.status(200).json({ status: "ready" });
+    } catch {
+      res.status(503).json({
+        status: "not_ready",
+        error: { code: "DEPENDENCY_UNAVAILABLE", message: "A required dependency is unavailable" }
+      });
+    }
   });
 
   app.get("/metrics", (_req, res) => {
