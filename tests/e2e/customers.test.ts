@@ -61,6 +61,26 @@ describe("customer API", () => {
     expect(match?.[2]).not.toBe(parentSpanId);
   });
 
+  it("reports readiness when required dependencies are available", async () => {
+    const app = createApp(undefined, async () => undefined);
+    const response = await request(app).get("/ready").expect(200);
+    expect(response.body).toEqual({ status: "ready" });
+  });
+
+  it("reports not ready when a required dependency is unavailable", async () => {
+    const app = createApp(undefined, async () => {
+      throw new Error("database unavailable");
+    });
+    const response = await request(app).get("/ready").expect(503);
+    expect(response.body).toEqual({
+      status: "not_ready",
+      error: {
+        code: "DEPENDENCY_UNAVAILABLE",
+        message: "A required dependency is unavailable"
+      }
+    });
+  });
+
   it("exposes Prometheus-compatible HTTP metrics", async () => {
     const app = createApp();
     await request(app).get("/health").expect(200);
