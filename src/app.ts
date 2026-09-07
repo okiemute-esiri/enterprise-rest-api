@@ -15,6 +15,12 @@ const updateCustomerSchema = createCustomerSchema.partial().refine(
   { message: "At least one field must be supplied" }
 );
 
+const listCustomersSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().uuid().optional(),
+  q: z.string().trim().min(1).max(100).optional()
+});
+
 export function createApp(repository: CustomerRepository = new InMemoryCustomerRepository()) {
   const app = express();
   const service = new CustomerService(repository);
@@ -51,9 +57,18 @@ export function createApp(repository: CustomerRepository = new InMemoryCustomerR
     res.status(200).json({ status: "ready" });
   });
 
-  app.get("/api/v1/customers", async (_req, res, next) => {
+  app.get("/api/v1/customers", async (req, res, next) => {
     try {
-      res.json({ data: await service.list() });
+      const query = listCustomersSchema.parse(req.query);
+      const page = await service.list({
+        limit: query.limit,
+        ...(query.cursor ? { cursor: query.cursor } : {}),
+        ...(query.q ? { query: query.q } : {})
+      });
+      res.json({
+        data: page.items,
+        meta: { limit: query.limit, nextCursor: page.nextCursor }
+      });
     } catch (error) {
       next(error);
     }
