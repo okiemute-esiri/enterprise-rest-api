@@ -1,14 +1,15 @@
 import { createApp } from "./app.js";
 import { InMemoryCustomerRepository } from "./infrastructure/in-memory-customer-repository.js";
 import { PrismaCustomerRepository } from "./infrastructure/prisma-customer-repository.js";
-import { disconnectPrisma } from "./infrastructure/prisma.js";
+import { checkPrismaReadiness, disconnectPrisma } from "./infrastructure/prisma.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const useDatabase = Boolean(process.env.DATABASE_URL);
 const repository = useDatabase
   ? new PrismaCustomerRepository()
   : new InMemoryCustomerRepository();
-const app = createApp(repository);
+const readinessCheck = useDatabase ? checkPrismaReadiness : async () => undefined;
+const app = createApp(repository, readinessCheck);
 
 const server = app.listen(port, () => {
   console.log(
