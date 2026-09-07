@@ -7,8 +7,19 @@ export class RepositoryConflictError extends Error {
   }
 }
 
+export type CustomerListOptions = {
+  limit: number;
+  cursor?: CustomerId;
+  query?: string;
+};
+
+export type CustomerPage = {
+  items: Customer[];
+  nextCursor: CustomerId | null;
+};
+
 export interface CustomerRepository {
-  list(): Promise<Customer[]>;
+  list(options: CustomerListOptions): Promise<CustomerPage>;
   findById(id: CustomerId): Promise<Customer | null>;
   findByEmail(email: string): Promise<Customer | null>;
   create(input: CreateCustomerInput): Promise<Customer>;
