@@ -1,10 +1,10 @@
 # Enterprise REST API
 
-A production-oriented TypeScript backend demonstrating layered REST API design, validation, deterministic error handling, replaceable persistence, PostgreSQL integration testing, cursor pagination, filtering, structured HTTP logging, request correlation, Prometheus-compatible metrics, W3C trace-context propagation, containerization and CI.
+A production-oriented TypeScript backend demonstrating layered REST API design, validation, deterministic error handling, replaceable persistence, PostgreSQL integration testing, cursor pagination, filtering, structured HTTP logging, request correlation, Prometheus-compatible metrics, W3C trace-context propagation, containerization, Kubernetes deployment configuration and CI.
 
 ## Current Status
 
-The repository contains a working customer API with in-memory and Prisma/PostgreSQL persistence behind the same repository contract. PostgreSQL behavior is verified in CI against a real PostgreSQL 16 service, while the in-memory adapter remains useful for deterministic API tests and zero-dependency local runs.
+The repository contains a working customer API with in-memory and Prisma/PostgreSQL persistence behind the same repository contract. PostgreSQL behavior is verified in CI against a real PostgreSQL 16 service, while the in-memory adapter remains useful for deterministic API tests and zero-dependency local runs. Kubernetes deployment manifests are schema-validated in CI with kubeconform.
 
 ## Implemented
 
@@ -37,9 +37,15 @@ The repository contains a working customer API with in-memory and Prisma/Postgre
 - PostgreSQL-backed Prisma integration tests
 - OpenAPI 3 specification
 - architecture documentation
-- multi-stage Docker image with generated Prisma client
+- multi-stage Docker image with generated Prisma client and non-root runtime
 - Docker Compose PostgreSQL development stack
+- Kubernetes Deployment and ClusterIP Service manifests
+- Kubernetes liveness/readiness probes and resource requests/limits
+- HorizontalPodAutoscaler and PodDisruptionBudget
+- restrictive Kubernetes container security context
+- Kubernetes Secret example for `DATABASE_URL`
 - GitHub Actions CI with PostgreSQL 16, migrations, tests, build and Docker verification
+- strict offline Kubernetes schema validation with kubeconform
 
 ## Technology Stack
 
@@ -54,7 +60,8 @@ The repository contains a working customer API with in-memory and Prisma/Postgre
 | Testing | Vitest + Supertest |
 | API Contract | OpenAPI 3 |
 | Containers | Docker + Docker Compose |
-| CI/CD | GitHub Actions |
+| Orchestration | Kubernetes manifests |
+| CI/CD | GitHub Actions + kubeconform validation |
 
 ## Architecture
 
@@ -127,6 +134,22 @@ npm run dev
 
 Without `DATABASE_URL`, the server uses the in-memory repository.
 
+## Kubernetes Deployment
+
+The `k8s/` directory contains deployment-oriented manifests for the API:
+
+```text
+k8s/
+├── deployment.yaml
+└── secret.example.yaml
+```
+
+`deployment.yaml` defines a two-replica rolling Deployment, ClusterIP Service, CPU-based HorizontalPodAutoscaler and PodDisruptionBudget. The container uses `/ready` and `/health` for readiness and liveness probes, declares CPU/memory requests and limits, and applies a restrictive security context with non-root execution, no privilege escalation, a read-only root filesystem and dropped Linux capabilities.
+
+`secret.example.yaml` documents the expected `DATABASE_URL` Secret shape. It contains an example value only; real credentials must be supplied through the target environment's secret-management process and must not be committed.
+
+The manifests are deployment configuration rather than evidence of a live hosted environment. CI validates their Kubernetes schemas offline with kubeconform in strict mode.
+
 ## Validation
 
 ```bash
@@ -137,7 +160,7 @@ npm run build
 docker build -t enterprise-rest-api .
 ```
 
-The test suite includes API-level pagination/filtering, metrics and trace-context coverage plus real PostgreSQL integration tests. CI starts PostgreSQL 16, deploys committed migrations, executes the test suite, builds the TypeScript output and verifies the Docker image.
+The test suite includes API-level pagination/filtering, metrics and trace-context coverage plus real PostgreSQL integration tests. CI starts PostgreSQL 16, deploys committed migrations, executes the test suite, builds the TypeScript output, verifies the Docker image and validates Kubernetes manifests with kubeconform.
 
 ## Error Contract
 
@@ -172,9 +195,10 @@ The test suite includes API-level pagination/filtering, metrics and trace-contex
 - [x] Add cursor pagination and customer filtering
 - [x] Add Prometheus-compatible service metrics
 - [x] Add W3C trace-context propagation foundation
+- [x] Add Kubernetes deployment manifests
+- [x] Validate Kubernetes manifests in CI
 - [ ] Add OpenTelemetry exporter/backend integration for full distributed tracing
-- [ ] Add deployment manifests
 
 ## Engineering Focus
 
-This project demonstrates backend engineering beyond basic CRUD: dependency inversion, explicit service boundaries, deterministic failure semantics, migration-aware persistence, cursor pagination, query filtering, real database integration testing, operational correlation, metrics and trace context, containerized local development and CI-backed verification.
+This project demonstrates backend engineering beyond basic CRUD: dependency inversion, explicit service boundaries, deterministic failure semantics, migration-aware persistence, cursor pagination, query filtering, real database integration testing, operational correlation, metrics and trace context, containerized local development, Kubernetes deployment configuration and CI-backed verification.
