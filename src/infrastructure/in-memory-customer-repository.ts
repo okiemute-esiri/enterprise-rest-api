@@ -1,12 +1,26 @@
 import { randomUUID } from "node:crypto";
 import type { CreateCustomerInput, Customer, CustomerId, UpdateCustomerInput } from "../domain/customer.js";
-import type { CustomerRepository } from "../domain/customer-repository.js";
+import type { CustomerListOptions, CustomerPage, CustomerRepository } from "../domain/customer-repository.js";
 
 export class InMemoryCustomerRepository implements CustomerRepository {
   private readonly customers = new Map<CustomerId, Customer>();
 
-  async list(): Promise<Customer[]> {
-    return [...this.customers.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  async list(options: CustomerListOptions): Promise<CustomerPage> {
+    const normalizedQuery = options.query?.trim().toLowerCase();
+    const ordered = [...this.customers.values()]
+      .filter((customer) => !normalizedQuery || customer.name.toLowerCase().includes(normalizedQuery) || customer.email.includes(normalizedQuery))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+
+    const cursorIndex = options.cursor ? ordered.findIndex((customer) => customer.id === options.cursor) : -1;
+    const start = cursorIndex >= 0 ? cursorIndex + 1 : 0;
+    const pageItems = ordered.slice(start, start + options.limit + 1);
+    const hasMore = pageItems.length > options.limit;
+    const items = hasMore ? pageItems.slice(0, options.limit) : pageItems;
+
+    return {
+      items,
+      nextCursor: hasMore ? items.at(-1)?.id ?? null : null
+    };
   }
 
   async findById(id: CustomerId): Promise<Customer | null> {
