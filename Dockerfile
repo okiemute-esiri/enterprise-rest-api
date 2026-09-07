@@ -16,5 +16,6 @@ RUN npm install --omit=dev && npm cache clean --force
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/dist ./dist
 COPY prisma ./prisma
+USER node
 EXPOSE 3000
 CMD ["node", "dist/src/server.js"]
