@@ -33,6 +33,18 @@ describe("customer API", () => {
     await request(app).get(`/api/v1/customers/${id}`).expect(404);
   });
 
+  it("generates and preserves request correlation IDs", async () => {
+    const app = createApp();
+    const generated = await request(app).get("/health").expect(200);
+    expect(generated.headers["x-request-id"]).toBeTruthy();
+
+    const supplied = await request(app)
+      .get("/health")
+      .set("x-request-id", "enterprise-rest-api-request-123")
+      .expect(200);
+    expect(supplied.headers["x-request-id"]).toBe("enterprise-rest-api-request-123");
+  });
+
   it("rejects invalid customer payloads", async () => {
     const app = createApp();
 
